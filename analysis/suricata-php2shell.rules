@@ -1,0 +1,42 @@
+# PHP2Shell (CVE-2026-109618 / CVE-2026-109619) research detections.
+# DETECTION ONLY. These are heuristics for a honeypot, tuned for recall over
+# precision. Rule 2 will fire on legitimate session.upload_progress use, which
+# is why it is scored as informational. Renumber sids for your own range.
+
+# 1. Session ID supplied in a POST body alongside the upload-progress field.
+#    Legitimate clients put the session id in a cookie; putting it in the body
+#    is how the published chain steers which session file gets written.
+alert http any any -> $HOME_NET any ( \
+  msg:"PHP2SHELL session id in POST body with upload_progress field"; \
+  flow:established,to_server; http.method; content:"POST"; \
+  http.request_body; content:"PHP_SESSION_UPLOAD_PROGRESS"; nocase; \
+  http.request_body; content:"PHPSESSID"; nocase; \
+  classtype:web-application-attack; priority:1; \
+  sid:9109618; rev:1;)
+
+# 2. Upload-progress field present at all. Informational baseline.
+alert http any any -> $HOME_NET any ( \
+  msg:"PHP2SHELL upload_progress field observed (informational)"; \
+  flow:established,to_server; http.method; content:"POST"; \
+  http.request_body; content:"PHP_SESSION_UPLOAD_PROGRESS"; nocase; \
+  classtype:not-suspicious; priority:3; \
+  sid:9109620; rev:1;)
+
+# 3. Serialized-object markers inside a multipart filename. Filenames are
+#    written into session data, and the session decoder runs before app code.
+alert http any any -> $HOME_NET any ( \
+  msg:"PHP2SHELL serialized object marker in multipart filename"; \
+  flow:established,to_server; http.method; content:"POST"; \
+  http.request_body; content:"filename="; nocase; \
+  http.request_body; pcre:"/filename=\"[^\"]{0,200}(?:O:\d+:|C:\d+:|a:\d+:\{|\x00)/i"; \
+  classtype:web-application-attack; priority:1; \
+  sid:9109621; rev:1;)
+
+# 4. Outbound fetch from the web user right after a POST. On this honeypot the
+#    gateway throttles egress, so this firing means a dropper tried to run.
+alert http $HOME_NET any -> any any ( \
+  msg:"PHP2SHELL possible second-stage fetch from honeypot"; \
+  flow:established,to_server; http.method; content:"GET"; \
+  http.user_agent; pcre:"/^(?:curl|Wget|python-requests|libwww-perl|Go-http-client)/i"; \
+  classtype:trojan-activity; priority:1; \
+  sid:9109622; rev:1;)

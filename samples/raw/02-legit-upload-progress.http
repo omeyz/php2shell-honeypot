@@ -1,0 +1,14 @@
+POST /upload.php HTTP/1.1
+Host: example
+Cookie: PHPSESSID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Content-Type: multipart/form-data; boundary=X
+
+--X
+Content-Disposition: form-data; name="PHP_SESSION_UPLOAD_PROGRESS"
+
+myupload
+--X
+Content-Disposition: form-data; name="file"; filename="report.pdf"
+
+PDFDATA
+--X--

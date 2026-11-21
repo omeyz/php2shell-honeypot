@@ -1,0 +1,17 @@
+POST / HTTP/1.1
+Host: example
+Content-Type: multipart/form-data; boundary=Z
+
+--Z
+Content-Disposition: form-data; name="PHPSESSID"
+
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+--Z
+Content-Disposition: form-data; name="PHP_SESSION_UPLOAD_PROGRESS"
+
+x
+--Z
+Content-Disposition: form-data; name="f"; filename="second-request-same-session"
+
+B
+--Z--

@@ -1,0 +1,13 @@
+-D
+-b 8192
+-f 1
+--backlog_wait_time 0
+-a always,exit -F arch=b64 -S execve -k hp_exec
+-a always,exit -F arch=b32 -S execve -k hp_exec
+-w /var/www/wordpress -p wa -k hp_webroot
+-w /etc/passwd -p wa -k hp_passwd
+-w /etc/shadow -p wa -k hp_shadow
+-w /root/.ssh -p wa -k hp_sshkeys
+-w /etc/crontab -p wa -k hp_cron
+-w /etc/cron.d -p wa -k hp_cron
+-w /var/lib/php/sessions -p wa -k hp_sessions

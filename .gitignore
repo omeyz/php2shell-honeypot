@@ -1,0 +1,5 @@
+gateway/honeypot.env
+*.pcap
+*.pcap.gz
+findings/
+.DS_Store

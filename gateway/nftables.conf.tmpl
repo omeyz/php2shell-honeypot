@@ -1,0 +1,93 @@
+#!/usr/sbin/nft -f
+# PHP2Shell honeypot gateway ruleset.
+# Model: the honeypot WILL be rooted. This file is what stops a rooted box
+# from being used against anyone else. Default deny in every direction.
+flush ruleset
+
+define PUB_IF     = "@PUB_IF@"
+define PRIV_IF    = "@PRIV_IF@"
+define GW_IP      = @GW_IP@
+define HONEY_IP   = @HONEY_IP@
+define ADMIN_CIDR = @ADMIN_CIDR@
+define SSH_PORT   = @SSH_PORT@
+define RESOLVER   = @RESOLVER@
+
+table inet filter {
+  counter egress_web   { }
+  counter egress_dns   { }
+  counter egress_block { }
+  counter inbound_web  { }
+
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iifname "lo" accept
+    ct state established,related accept
+    # Admin SSH from one address only.
+    ip saddr $ADMIN_CIDR tcp dport $SSH_PORT ct state new accept
+    # Syslog shipped from the honeypot.
+    ip saddr $HONEY_IP udp dport 514 accept
+    ip protocol icmp icmp type echo-request limit rate 5/second accept
+    log prefix "GW-IN-DROP " level info
+  }
+
+  chain output {
+    type filter hook output priority 0; policy accept;
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    # No IPv6 path at all. One stack to reason about.
+    meta nfproto ipv6 log prefix "FWD-V6-DROP " level info drop
+    ct state established,related accept
+    # Discriminate by address, not interface. On a single-NIC host (GCP and
+    # most clouds) both directions cross the same interface, so interface
+    # matching cannot tell inbound bait from honeypot egress.
+    #
+    # Inbound: the bait. Port 80 only, so exploit traffic stays plaintext.
+    ip daddr $HONEY_IP tcp dport 80 ct state new \
+        counter name "inbound_web" accept
+    ip saddr $HONEY_IP jump honeypot_egress
+    log prefix "FWD-DROP " level info
+  }
+
+  # Everything the honeypot tries to reach. Attempts we refuse are still
+  # logged, so a blocked pivot is intel rather than a hole.
+  chain honeypot_egress {
+    # Never into private space, link-local, CGNAT or cloud metadata.
+    ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } \
+        log prefix "EGRESS-PRIVATE-BLOCK " level warn counter name "egress_block" drop
+    # Mail is never allowed. Spam runs are the #1 way a honeypot gets you banned.
+    tcp dport { 25, 465, 587, 2525 } \
+        log prefix "EGRESS-SMTP-BLOCK " level warn counter name "egress_block" drop
+    # DNS to one pinned resolver, logged, so we see C2 lookups.
+    ip daddr $RESOLVER udp dport 53 limit rate 20/second \
+        log prefix "EGRESS-DNS " level info counter name "egress_dns" accept
+    ip daddr $RESOLVER tcp dport 53 limit rate 20/second \
+        log prefix "EGRESS-DNS " level info counter name "egress_dns" accept
+    udp dport 53 log prefix "EGRESS-DNS-OTHER-BLOCK " level warn counter name "egress_block" drop
+    # Second-stage download: allowed but throttled hard. Enough to fetch a
+    # dropper, not enough to scan or flood.
+    tcp dport { 80, 443 } ct state new limit rate 6/minute burst 10 packets \
+        log prefix "EGRESS-WEB " level info counter name "egress_web" accept
+    tcp dport { 80, 443 } ct state new \
+        log prefix "EGRESS-WEB-RATELIMIT " level warn counter name "egress_block" drop
+    # Scans, pivots, reverse shells to odd ports: logged, refused.
+    log prefix "EGRESS-OTHER-BLOCK " level warn counter name "egress_block"
+    drop
+  }
+}
+
+table ip nat {
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    # Match on the gateway's OWN address, not just the interface. With one
+    # NIC, "arrived on the public interface with dport 80" is also true of
+    # the honeypot's own outbound HTTP, which would then be redirected back
+    # at the honeypot. Keying on the destination address cannot do that.
+    ip daddr $GW_IP tcp dport 80 ct state new dnat to $HONEY_IP:80
+  }
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr $HONEY_IP oifname $PUB_IF masquerade
+  }
+}

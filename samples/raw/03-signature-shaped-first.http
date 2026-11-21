@@ -1,0 +1,17 @@
+POST / HTTP/1.1
+Host: example
+Content-Type: multipart/form-data; boundary=Y
+
+--Y
+Content-Disposition: form-data; name="PHPSESSID"
+
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+--Y
+Content-Disposition: form-data; name="PHP_SESSION_UPLOAD_PROGRESS"
+
+x
+--Y
+Content-Disposition: form-data; name="f"; filename="O:8:INERTEST:0:{}-not-an-exploit"
+
+A
+--Y--
